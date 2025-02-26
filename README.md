@@ -6,6 +6,10 @@ RecCrysFormer leverages Patterson maps and incorporates known standardized parti
 RecCrysFormer benefits from a ``recycling'' training regimen that iteratively incorporates results from crystallographic refinements and previous training runs as additional inputs in the form of template maps. 
 Using a preliminary dataset of synthetic peptide fragments based on Protein Data Bank, RecCrysFormer achieves good accuracy in structural predictions and shows robustness against variations in crystal parameters, such as unit cell dimensions and angles.
 
+<p align="center">
+  <img src="./images/4AZ3_1.pd_11.PNG" alt="Model Predictions after initial, recycling, and modified recycling runs on a test set example"/>
+</p>
+
 ## Additional files
 Repopulate the "dataset_gen/2_pdb_reweight_allatom_clean_reorient_center" and "predictions_15_angle" directories with the remaining files extracted from the zenodo dataset.
 After extracting the contents of the additional *_ext zenodo files, move all their files into the predictions_15_angle directory.
