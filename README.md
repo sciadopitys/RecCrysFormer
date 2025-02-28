@@ -11,7 +11,7 @@ Using a preliminary dataset of synthetic peptide fragments based on Protein Data
 </p>
 
 ## Additional files
-Repopulate the "dataset_gen/2_pdb_reweight_allatom_clean_reorient_center" and "predictions_15_angle" directories with the remaining files extracted from the zenodo dataset.
+Repopulate the "dataset_gen/2_pdb_reweight_allatom_clean_reorient_center" and "predictions_15_angle" directories with the remaining files extracted from the initial zenodo dataset.
 After extracting the contents of the additional *_ext zenodo files, move all their files into the predictions_15_angle directory.
 
 ## Dataset Generation
