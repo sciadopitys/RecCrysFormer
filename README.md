@@ -26,8 +26,10 @@ Requires Torch version >= 1.12.0 and einops version >= 0.6.0.
 
 ## Training
 Run the initial training run as "python3 train_init.py".
-After each training epoch, a line with 5 columns will be printed to the console.  The first displays the epoch number starting from zero, the second the average MSE across the training set, the third the average Pearson correlation across the test set,
-the fourth the average Pearson between Fourier transformed and absolute valued predictions and electron densities across the test set, and the fifth the most recent learning rate value.
+After each training epoch, a line with 5 columns will be printed to the console.  The first displays the epoch number starting from zero, the second the average MSE across the training set, the third the average Pearson correlation across the test set.
+The fourth column reports the average Pearson across the test set after first applying a Fourier transform to both the
+model prediction and ground truth and then taking the amplitudes of all elements in the resulting
+complex tensors, and the fifth displays the most recent learning rate value.
 After this completes, run "python3 get_pred.py" to generate model predictions from the final model state into the predictions_15_angle directory.
 This directory already contains provided SHELXE-derived refined maps for 92% of the training set and 79% of the test set.
 Finally, run either "python3 train_rec.py" for the original version of our recycling formulation, or "python3 train_rec_modified.py" for the modified version of our recycling formulation, both as described in the text.
