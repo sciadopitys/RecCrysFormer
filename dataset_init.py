@@ -61,17 +61,17 @@ def create_batches():
             new_x = torch.unsqueeze(new_x, 0)
 
             # load in accumulated set of partial structures
-            new_xlist = torch.load('res/' + trainlist[j] + '_ps.pt')  
+            new_ps = torch.load('res/' + trainlist[j] + '_ps.pt')  
             
             xlist.append(new_x)
-            pslist.append(new_xlist)
+            pslist.append(new_ps)
 
             # load in ground truth electron density
             new_y = torch.load('electron_density_pt_scaled/' + trainlist[j] + '_fft.pt')
             new_y = torch.unsqueeze(new_y, 0)
             ylist.append(new_y)
 
-        # convert to PyTorch tensors
+        # combine corresponding tensors
         data_x = torch.stack(xlist)
         data_ps = torch.stack(pslist)
         data_y = torch.stack(ylist)
