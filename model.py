@@ -109,6 +109,7 @@ class Transformer_partial_structure(nn.Module):
 #The above copyright notice and this permission notice shall be included in all
 #copies or substantial portions of the Software.
 
+# Post-transformer residual blocks
 class BigGANBlock(nn.Module):
 
     def __init__(self, in_channels, out_channels, stride=1):
@@ -174,7 +175,8 @@ class ViT_vary_encoder_decoder_partial_structure(nn.Module):
         self.FFT_skip=args.FFT_skip
         same_partial_structure_emb=args.same_partial_structure_emb
 
-        if recycle:
+        # Define initial convolutions on Patterson map and partial structure
+        if recycle: # First convolutional layer accepts an additional input channel during recycling runs
             self.conv1 = nn.Conv3d(in_channels=2, out_channels=10, kernel_size=7, padding=3, bias=False, padding_mode='circular')
         else:
             self.conv1 = nn.Conv3d(in_channels=1, out_channels=10, kernel_size=7, padding=3, bias=False, padding_mode='circular')
@@ -190,10 +192,12 @@ class ViT_vary_encoder_decoder_partial_structure(nn.Module):
         self.patch_width=patch_width
         self.frame_patch_size=frame_patch_size
 
+        # Calculate number of patches derived from Patterson map and set of partial structure
         self.num_patches = (math.ceil(image_height / patch_height)) * math.ceil(image_width / patch_width) * math.ceil(frames / frame_patch_size)
         self.num_patches_ps = self.num_patches + ((math.ceil(ps_size / patch_height)) * math.ceil(ps_size / patch_width) * math.ceil(ps_size / frame_patch_size) * num_partial_structure)
         patch_dim = channels * patch_height * patch_width * frame_patch_size
 
+        # Patch embedding operations
         self.to_patch_embedding = nn.Sequential(
             Rearrange('b c (f pf) (h p1) (w p2) -> b (f h w) (p1 p2 pf c)', p1 = patch_height, p2 = patch_width, pf = frame_patch_size),
             nn.LayerNorm(patch_dim),
@@ -201,19 +205,21 @@ class ViT_vary_encoder_decoder_partial_structure(nn.Module):
             nn.LayerNorm(dim),
         )
 
+        # Positional embedding
         self.pos_embedding = nn.Parameter(torch.randn(1, self.num_patches, dim))
         self.dropout = nn.Dropout(emb_dropout)
 
 
         self.transformer = Transformer_partial_structure(patch_dim, self.num_patches, self.num_patches_ps, patch_height, patch_width, frame_patch_size, num_partial_structure, dim, depth, heads, dim_head, mlp_dim, same_partial_structure_emb, dropout)
 
-
+        # Conversion back into 3D shape
         self.from_patch_embedding = nn.Sequential(
             nn.LayerNorm(dim),
             nn.Linear(dim, patch_dim),
             nn.LayerNorm(patch_dim),
         )
-        
+
+        # Post-transformer CNN
         self.biggan_block_num=biggan_block_num
         self.bigGAN_layers=nn.ModuleList([])
         for i in range(biggan_block_num):
@@ -224,8 +230,11 @@ class ViT_vary_encoder_decoder_partial_structure(nn.Module):
 
     def forward(self, x, ps):
 
+        # Remove dummy batch dimension
         x = torch.squeeze(x,0)
         partial_structure = torch.squeeze(ps, 0)
+
+        # Zero-pad Patterson and partial structure inputs such that all dimensions are divisible by corresponding patch dimension
         x_shape_original = x.shape
         pad_list=[]
         res=x.shape[4]% self.patch_width
@@ -257,45 +266,38 @@ class ViT_vary_encoder_decoder_partial_structure(nn.Module):
         x= torch.nn.functional.pad(x,tuple(pad_list),"constant", 0)
 
         x_shape = x.shape
-        if self.FFT:
-            x_size=x.size()
-            if self.FFT_skip:
-                x= torch.fft.fftn(x,dim=(2,3,4)).real + x
-            else:
-                x= torch.fft.fftn(x,dim=(2,3,4)).real
-            assert x.size()==x_size
-        
+        # Initial CNN on and patch embedding on Patterson maps
         x = self.conv1(x)
         x = self.bn1(x) 
-
         
         x = self.to_patch_embedding(x)
         b, n, _ = x.shape
 
-
         _ , num_partial_structure, _ ,_ ,_ = partial_structure.shape
+        # Initial CNN on partial structures
         partial_structure = torch.unsqueeze(rearrange(partial_structure,'b p f h w -> (b p) f h w'),dim=1)
         partial_structure = self.conv1_p(partial_structure)
         partial_structure = self.bn1_p(partial_structure)
         partial_structure = rearrange(partial_structure,'(b p) c f h w -> b p c f h w', b=b, p=num_partial_structure)
-        
+
+        # Apply positional embedding to sequence of Patterson tokens
         x += self.pos_embedding[:, :n]
         x = self.dropout(x)
-        
+
+        # Central vision transformer
         x = self.transformer(x,partial_structure)
 
+        # Convert from tokens back to 3D shape
         x = self.from_patch_embedding(x)
-
         x = rearrange(x, 'b (f h w) (p1 p2 pf c) -> b c (f pf) (h p1) (w p2)', f=x_shape[2] // self.frame_patch_size, h=x_shape[3] // self.patch_height, w=x_shape[4] // self.patch_width, p1 = self.patch_height, p2 = self.patch_width, pf = self.frame_patch_size, c=10)
-        
+
+        # Post-transformer CNN
         for i in range(self.biggan_block_num):
             x = self.bigGAN_layers[i](x)
 
         x = self.conv2(x)
 
-        if self.iFFT:
-            x = torch.fft.ifftn(x).real
-
+        # Allow different final activations
         if self.activation=='tanh':
             x = torch.tanh(x)
         elif self.activation=='sigmoid':
@@ -304,7 +306,9 @@ class ViT_vary_encoder_decoder_partial_structure(nn.Module):
             x = x
         elif self.activation=='relu':
             x = torch.torch.nn.functional.relu(x)
-        x= x[:,:,pad_list[4]:(x.shape[2]-pad_list[5]),pad_list[2]:(x.shape[3]-pad_list[3]),pad_list[0]:(x.shape[4]-pad_list[1])]
 
+        # Extract out regions corresponding to unpadded dimensions
+        x= x[:,:,pad_list[4]:(x.shape[2]-pad_list[5]),pad_list[2]:(x.shape[3]-pad_list[3]),pad_list[0]:(x.shape[4]-pad_list[1])]
         
         return(x)
+
