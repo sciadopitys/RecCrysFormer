@@ -113,14 +113,15 @@ def create_batches(gau = False, rep = 0.0):
             
             
             new_x3 = torch.unsqueeze(new_x3, 0)
-            
-            new_xlist = torch.load('res/' + trainlist[j] + '_ps.pt')  
+
+            # load in accumulated set of partial structures
+            new_ps = torch.load('res/' + trainlist[j] + '_ps.pt')  
 
             # concatenate Patterson and template tensors
             new_xcomb = torch.cat((new_x, new_x3), 0)
           
             xlist.append(new_xcomb)
-            pslist.append(new_xlist)
+            pslist.append(new_ps)
 
             # load in ground truth electron density
             new_y = torch.load('electron_density_pt_scaled/' + trainlist[j] + '_fft.pt')
