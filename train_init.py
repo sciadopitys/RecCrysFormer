@@ -238,18 +238,18 @@ parser.add_argument('--mlp_dim',default=2048, type=int, help='dimensionality wit
 parser.add_argument('--max_partial_structure',default=15, type=int, help='max number of partial_structures')
 parser.add_argument('--same_partial_structure_emb', default = True, help='whether to use a constant partial structure embedding in each transformer layer')
 
-parser.add_argument('--biggan_block_num',default=2, type=int, help='number of post-transformer BigGAN residual convolutio')
+parser.add_argument('--biggan_block_num',default=2, type=int, help='number of post-transformer BigGAN residual convolution')
 args = parser.parse_args()
 
 # create model with specified hyperparameters and send it to GPU
 model = ViT_vary_encoder_decoder_partial_structure(
     args=args,
-    num_partial_structure = args.max_partial_structure, #max number of amino acid (partial structure) 
-    image_height = args.max_image_height,          # max image size
+    num_partial_structure = args.max_partial_structure, 
+    image_height = args.max_image_height,         
     image_width = args.max_image_width,
-    frames = args.max_image_depth,               # max number of frames
-    image_patch_size = args.patch_size,     # image patch size
-    frame_patch_size = args.patch_size,      # frame patch size
+    frames = args.max_image_depth,               
+    image_patch_size = args.patch_size,   
+    frame_patch_size = args.patch_size,  
     ps_size = args.ps_size,
     dim = args.dim,
     depth = args.depth,
@@ -373,6 +373,7 @@ while epoch < n_epochs:
     test_pearson = (acc2 / n_test)
     #test_fft = (acc3 / n_test)
     test_pearson_fft = (acc4 / n_test)
+    
     # report epoch number, average training set loss, standard Pearson, Pearson after Fourier transforms, and last learning rate
     print("%d %.10f %.6f %.6f %.10f" % (epoch, (acc / n_train), test_pearson, test_pearson_fft, scheduler.get_last_lr()[0]))
     
