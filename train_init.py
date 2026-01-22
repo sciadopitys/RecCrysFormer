@@ -24,6 +24,7 @@ from model import ViT_vary_encoder_decoder_partial_structure
 import random
 import argparse
 
+# lower matrix multiplication precision
 torch.set_float32_matmul_precision('high')
 
 def set_seed(args):
@@ -31,25 +32,27 @@ def set_seed(args):
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
 
+#use GPU if possible
+device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+#torch.backends.cudnn.benchmark = True
 
-device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu') #use GPU if possible
-torch.backends.cudnn.benchmark = True
-
+# load list of indices defining training batches
 with open("training_indices.txt") as myfile2:
     indices = myfile2.readlines()
 indlist  = [x.rstrip() for x in indices]
 
+# load list of test set examples
 with open("test_examples.txt") as myfile: 
     testlist = myfile.readlines()
 testlist = [x.rstrip() for x in testlist]
 
+# load list of primary sequences for all dataset examples
 with open("reslist.txt") as myfile1:
     examples = myfile1.readlines()
-    examples  = [x.rstrip() for x in examples]
+examples  = [x.rstrip() for x in examples]
 
-   
+# create set of partial structure maps for each example   
 for x in examples:
-
     line = x.split(" ")
     id1 = line[-1][:-4]
     num_res = len(line) - 1
@@ -65,10 +68,10 @@ for x in examples:
     Xlist = torch.stack(xlist)
     torch.save(Xlist, 'res/' + id1 + '_ps.pt')  
 
-
+# generate training batches
 dataset_init.create_batches()
 
-
+# test set dataset definition
 class Dataset(torch.utils.data.Dataset):
 
   def __init__(self, pdbIDs):
@@ -78,35 +81,42 @@ class Dataset(torch.utils.data.Dataset):
   def __len__(self):
         return len(self.ids)
 
-  def __getitem__(self, index):
+  def __getitem__(self, index): #each example consists of patterson map and partial structure inputs, and output electron density 
         
         
         ID = self.ids[index]
-        
+
+        # load Patterson map
         X = torch.load('patterson_pt_scaled/' + ID + '_patterson.pt')
         X = torch.unsqueeze(X, 0)
-        
+
+        # load set of partial structures
         Xlist = torch.load('res/' + ID + '_ps.pt') 
         Xlist = torch.unsqueeze(Xlist, 0)
-        
+
+        # introduce dummy dimension for consistency with training batches
         X = torch.unsqueeze(X, 0)
+        #Xlist = torch.unsqueeze(Xlist, 0)
+
+        # load ground truth electron density
         y = torch.load('electron_density_pt_scaled/' + ID + '_fft.pt')
         y = torch.unsqueeze(y, 0)
         
         return X, Xlist, y       
 
+# create test set
+dataset_test = Dataset(testlist)
+n_test = float(len(dataset_test))
 
-dataset_val = Dataset(testlist)
-n_test = float(len(dataset_val))
-
-
+# training set dataset definition
 class Dataset1(torch.utils.data.Dataset):
 
     def __init__(self, indices): 
         self.indices = indices        
         
     def __getitem__(self, index):
-    
+
+        # load stored user-generated batches
         X = torch.load('patterson_pt_scaled/train_' + str(index) + '_patterson.pt')  
         PS = torch.load('patterson_pt_scaled/train_' + str(index) + '_ps.pt')
         y = torch.load('electron_density_pt_scaled/train_' + str(index) + '.pt')
@@ -114,13 +124,15 @@ class Dataset1(torch.utils.data.Dataset):
         return X, PS, y
         
     def __len__(self):
+
+        # ensure even number of batches each epoch with gradient accumulation
         return len(self.indices) - 4
-        
+
+# create training set with size based on list of indices defining training batches
 dataset_train = Dataset1(indlist)
 n_train = len(indlist)
 
-epsilon = 1e-8
-
+# calculate Pearson r correlation coefficient for single pair
 def pearson_r_loss(output, target): 
 
     x = output
@@ -130,9 +142,10 @@ def pearson_r_loss(output, target):
     vx = x - torch.mean(x)
     vy = y - torch.mean(y)
 
-    cost = (torch.sum(vx * vy) / (torch.sqrt(torch.sum(torch.square(vx)) + epsilon) * torch.sqrt(torch.sum(torch.square(vy)) + epsilon)))
+    cost = (torch.sum(vx * vy) / (torch.sqrt(torch.sum(torch.square(vx))) * torch.sqrt(torch.sum(torch.square(vy)))))
     return cost
-    
+
+# calculate Pearson correlation of magnitudes after taking Fourier transform of prediction and ground truth for a batch
 def pearson_r_loss2(output, target): 
 
     x = output[:,0,:,:,:]
@@ -159,9 +172,10 @@ def pearson_r_loss2(output, target):
         vx = curx2 - torch.mean(curx2)
         vy = cury2 - torch.mean(cury2)
 
-        cost += (torch.sum(vx * vy) / (torch.sqrt(torch.sum(torch.square(vx)) + epsilon) * torch.sqrt(torch.sum(torch.square(vy)) + epsilon)))
+        cost += (torch.sum(vx * vy) / (torch.sqrt(torch.sum(torch.square(vx))) * torch.sqrt(torch.sum(torch.square(vy)))))
     return (cost / batch)
-    
+
+# calculate Pearson correlation for a batch
 def pearson_r_loss3(output, target): 
 
     x = output[:,0,:,:,:]
@@ -182,9 +196,10 @@ def pearson_r_loss3(output, target):
         vx = curx - torch.mean(curx)
         vy = cury - torch.mean(cury)
 
-        cost += (torch.sum(vx * vy) / (torch.sqrt(torch.sum(torch.square(vx)) + epsilon) * torch.sqrt(torch.sum(torch.square(vy)) + epsilon)))
+        cost += (torch.sum(vx * vy) / (torch.sqrt(torch.sum(torch.square(vx))) * torch.sqrt(torch.sum(torch.square(vy)))))
     return (cost / batch)
-    
+
+# calculate a Pearson correlation comparison between transformed prediction and corresponding Patterson input as a sanity check
 def fft_loss(patterson, electron_density):
     patterson = patterson[0,0,0,:,:]
     electron_density = electron_density[0,0,:,:,:]
@@ -197,46 +212,42 @@ def fft_loss(patterson, electron_density):
     vx = f4 - torch.mean(f4)
     vy = patterson - torch.mean(patterson)
 
-    cost = (torch.sum(vx * vy) / (torch.sqrt(torch.sum(torch.square(vx)) + epsilon) * torch.sqrt(torch.sum(torch.square(vy)) + epsilon)))
+    cost = (torch.sum(vx * vy) / (torch.sqrt(torch.sum(torch.square(vx))) * torch.sqrt(torch.sum(torch.square(vy)))))
     return cost
 
-
+# Create dataloaders. Test set has batch size 1, training set effective batch size specified by generated batches
 train_loader = torch.utils.data.DataLoader(dataset=dataset_train, shuffle = True, batch_size= 1, num_workers = 4, pin_memory = True)
-test_loader = torch.utils.data.DataLoader(dataset=dataset_val, shuffle = False, batch_size= 1, num_workers = 4, pin_memory = True)
+test_loader = torch.utils.data.DataLoader(dataset=dataset_test, shuffle = False, batch_size= 1, num_workers = 4, pin_memory = True)
 
+# specify default values for model and training hyperparameters (can also be specified in command line)
 parser = argparse.ArgumentParser(description='simple distributed training job')
 
 parser.add_argument('--total_epochs', default=110, type=int, help='Total epochs to train the model')
-parser.add_argument('--lr_lambda', default=2, type=int, help='lr scheduler')
-parser.add_argument('--max_frame_size',default=88, type=int, help='max size')
-parser.add_argument('--max_image_height',default=72, type=int, help='max size')
-parser.add_argument('--max_image_width',default=60, type=int, help='max size')
-parser.add_argument('--ps_size',default=24, type=int, help='max size')
-parser.add_argument('--patch_size',default=4, type=int, help='patch size')
-parser.add_argument('--activation',default='tanh', type=str, help='activation function')
-parser.add_argument('--FFT', default = False, help='FFT')
-parser.add_argument('--iFFT', default = False, help='FFT')
-parser.add_argument('--FFT_skip', default = False, help='FFT')
-parser.add_argument('--transformer', default='Nystromformer',type=str , help='transformer type: normal or Nystromformer')
+parser.add_argument('--max_image_height',default=88, type=int, help='max size of Patterson/ground truth in first spatial dimension')
+parser.add_argument('--max_image_width',default=72, type=int, help='max size of Patterson/ground truth in second spatial dimension')
+parser.add_argument('--max_image_depth',default=60, type=int, help='max size of Patterson/ground truth in third spatial dimension')
+parser.add_argument('--ps_size',default=24, type=int, help='maximum side length of cubic partial structures')
+parser.add_argument('--patch_size',default=4, type=int, help='patch size (all dimensions)')
+parser.add_argument('--activation',default='tanh', type=str, help='final activation function')
 
-parser.add_argument('--dim',default=512, type=int, help='dim')
-parser.add_argument('--depth',default=10, type=int, help='depth')
-parser.add_argument('--heads',default=8, type=int, help='heads')
-parser.add_argument('--mlp_dim',default=2048, type=int, help='mlp_dim')
+parser.add_argument('--dim',default=512, type=int, help='token embedding dimension')
+parser.add_argument('--depth',default=10, type=int, help='transformer depth')
+parser.add_argument('--heads',default=8, type=int, help='number of attention heads')
+parser.add_argument('--mlp_dim',default=2048, type=int, help='dimensionality within feedforward MLP')
 
-parser.add_argument('--max_partial_structure',default=15, type=int, help='max number of partial_structure')
-parser.add_argument('--same_partial_structure_emb', default = True, help='whether use same partial structure embeding layer each transformer layer')
+parser.add_argument('--max_partial_structure',default=15, type=int, help='max number of partial_structures')
+parser.add_argument('--same_partial_structure_emb', default = True, help='whether to use a constant partial structure embedding in each transformer layer')
 
-parser.add_argument('--biggan_block_num',default=2, type=int, help='number of additional biggan block')
+parser.add_argument('--biggan_block_num',default=2, type=int, help='number of post-transformer BigGAN residual convolutio')
 args = parser.parse_args()
 
-
+# create model with specified hyperparameters and send it to GPU
 model = ViT_vary_encoder_decoder_partial_structure(
     args=args,
     num_partial_structure = args.max_partial_structure, #max number of amino acid (partial structure) 
     image_height = args.max_image_height,          # max image size
     image_width = args.max_image_width,
-    frames = args.max_frame_size,               # max number of frames
+    frames = args.max_image_depth,               # max number of frames
     image_patch_size = args.patch_size,     # image patch size
     frame_patch_size = args.patch_size,      # frame patch size
     ps_size = args.ps_size,
@@ -251,23 +262,27 @@ model = ViT_vary_encoder_decoder_partial_structure(
     recycle = False
 ).to(device)
 
-#checkpoint = torch.load('state_init.pth')
-#model.load_state_dict(checkpoint['model_state_dict'])
-
-#specify loss function, learning rate schedule, number of epochs
+# specify main loss function term, learning rate schedule, number of epochs
 criterion = nn.MSELoss()
 learning_rate = 5e-4
 n_epochs = args.total_epochs
 epoch = 0
 accum = 4 #gradient accumulation; effective batch size is 4x
+
+# AdamW optimizer with one-cycle learning rate schedule
 optimizer = torch.optim.AdamW(model.parameters(), lr = learning_rate, weight_decay=3e-2)
 scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=0.0014, steps_per_epoch=(len(train_loader) // accum), epochs=n_epochs, pct_start=0.3, three_phase= False, div_factor=2.8, final_div_factor=40)
+
+# loading pretrained model 
+#checkpoint = torch.load('state_init.pth')
+#model.load_state_dict(checkpoint['model_state_dict'])
 
 #optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 #scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
 #loss = checkpoint['loss']
 #epoch = checkpoint['epoch']
 
+# step through lr schedule if desired
 """
 print(scheduler.state_dict())
 scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=0.0014, steps_per_epoch=(len(train_loader) // accum), epochs=n_epochs, pct_start=0.3, three_phase= False, div_factor=2.8, final_div_factor=40)
@@ -277,7 +292,7 @@ for i in range(234873):
 print(scheduler.state_dict())
 """
 
-
+# account for dummy dimension of desired ground truth
 def mse_wrapper_loss(output, target):
 
     y = torch.squeeze(target, 0)
@@ -286,31 +301,44 @@ def mse_wrapper_loss(output, target):
 clip = 1.0 #gradient clipping value
 while epoch < n_epochs:
     model.train() 
-    acc = 0.0
-    t1 = time.perf_counter()
+    acc = 0.0 #for reporting current training set loss
     
     if epoch >= 0:
-        for i, (x, ps, y) in enumerate(train_loader):    
+        for i, (x, ps, y) in enumerate(train_loader):  
+
+            # load tensors to GPU
             x, ps, y = x.to(device), ps.to(device), y.to(device)
-            yhat = model(x, ps)                                             #apply model to current example
-            loss_1 = mse_wrapper_loss(yhat, y)                              #evaluate losses
-            
-            
+
+            #apply model to current example
+            yhat = model(x, ps)    
+
+            # evaluate and add loss function terms
+            loss_1 = mse_wrapper_loss(yhat, y)                              
             loss_2 = (1 - pearson_r_loss2(yhat, y))
             loss_3 = (1 - pearson_r_loss3(yhat, y))
             loss = (0.9999 * loss_1) + (5e-5 * loss_3) + (5e-5 * loss_2)
             acc += float(loss.item())
+
+            #compute and accumulate gradients for model parameters
             loss = loss / accum                                             #needed due to gradient accumulation
-            loss.backward()                                                 #compute and accumulate gradients for model parameters
-            if (i+1) % accum == 0:                                          
-                torch.nn.utils.clip_grad_norm_(model.parameters(), clip)    #gradient clipping
-                optimizer.step()                                            #update model parameters only on accumulation epochs
-                optimizer.zero_grad()                                       #clear (accumulated) gradients
+            loss.backward()    
+
+            #update model parameters only on accumulation epochs
+            if (i+1) % accum == 0:      
+
+                #gradient clipping
+                torch.nn.utils.clip_grad_norm_(model.parameters(), clip)    
+                
+                optimizer.step()        
+
+                #clear (accumulated) gradients
+                optimizer.zero_grad()          
+                
                 scheduler.step()
                 torch.cuda.empty_cache()
   
   
-    
+        # save current model state
         torch.save({
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
@@ -319,7 +347,8 @@ while epoch < n_epochs:
             'epoch': epoch + 1,
             }, 'state_init.pth')
     
-        
+
+    # evaluate test set metrics after each epoch
     model.eval() 
     acc1 = 0.0
     acc2 = 0.0
@@ -344,12 +373,11 @@ while epoch < n_epochs:
     test_pearson = (acc2 / n_test)
     #test_fft = (acc3 / n_test)
     test_pearson_fft = (acc4 / n_test)
+    # report epoch number, average training set loss, standard Pearson, Pearson after Fourier transforms, and last learning rate
     print("%d %.10f %.6f %.6f %.10f" % (epoch, (acc / n_train), test_pearson, test_pearson_fft, scheduler.get_last_lr()[0]))
     
-    
+    # every 3 epochs, re-generate training batches to mix examples between batches
     if (epoch % 3 == 0):
-    
         dataset_init.create_batches()  
-    
     
     epoch += 1
