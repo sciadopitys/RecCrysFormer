@@ -110,8 +110,9 @@ class Dataset(torch.utils.data.Dataset):
         Xlist = torch.load('res/' + ID + '_ps.pt') 
         Xlist = torch.unsqueeze(Xlist, 0)
 
-        # introduce dummy dimension for consistency with training batches
+        # combine Patterson and template map
         X_comb = torch.cat((X, X1), 0)
+        # introduce dummy dimension for consistency with training batches
         X = torch.unsqueeze(X_comb, 0)
         #Xlist = torch.unsqueeze(Xlist, 0)
 
