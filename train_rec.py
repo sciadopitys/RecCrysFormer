@@ -121,7 +121,7 @@ class Dataset(torch.utils.data.Dataset):
         
         return X, Xlist, y        
 
-# create test set with 100% of using refined template if available
+# create test set with 100% chance of using refined template if available
 dataset_test = Dataset(testlist, 1.0)
 n_test = float(len(dataset_test))
 
@@ -235,7 +235,7 @@ def fft_loss(patterson, electron_density):
 
 # Create dataloaders. Test set has batch size 1, training set effective batch sizes induced by generated batches
 train_loader = torch.utils.data.DataLoader(dataset=dataset_train, shuffle = True, batch_size= 1, num_workers = 4, pin_memory = True)
-test_loader = torch.utils.data.DataLoader(dataset=dataset_val, shuffle = False, batch_size= 1, num_workers = 4, pin_memory = True)
+test_loader = torch.utils.data.DataLoader(dataset=dataset_test, shuffle = False, batch_size= 1, num_workers = 4, pin_memory = True)
 
 # specify default values for model and training hyperparameters (can also be specified in command line)
 parser = argparse.ArgumentParser(description='simple distributed training job')
@@ -320,7 +320,6 @@ clip = 1.0 #gradient clipping value
 while epoch < n_epochs:
     model.train() 
     acc = 0.0 #for reporting current training set loss
-    t1 = time.perf_counter()
 
     if (epoch > -1):
         for i, (x, ps, y) in enumerate(train_loader):    
