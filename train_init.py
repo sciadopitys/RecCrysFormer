@@ -258,6 +258,7 @@ model = ViT_vary_encoder_decoder_partial_structure(
     dropout = 0.1,
     emb_dropout = 0.1,
     biggan_block_num=args.biggan_block_num,
+    channels = 10,
     recycle = False
 ).to(device)
 
