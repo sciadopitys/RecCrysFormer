@@ -188,6 +188,8 @@ class ViT_vary_encoder_decoder_partial_structure(nn.Module):
     def __init__(self, args, num_partial_structure, image_height, image_width, image_depth, image_patch_size, ps_size, dim, depth, heads, mlp_dim, same_partial_structure_emb, channels = 10, dim_head = 64, dropout = 0., emb_dropout = 0., biggan_block_num=2, recycle = False):
         super().__init__()
 
+        self.channels = channels
+        
         # Define initial convolutions on Patterson map and partial structure
         if recycle: # First convolutional layer accepts an additional input channel during recycling runs
             self.conv1 = nn.Conv3d(in_channels=2, out_channels=channels, kernel_size=7, padding=3, bias=False, padding_mode='circular')
@@ -235,7 +237,7 @@ class ViT_vary_encoder_decoder_partial_structure(nn.Module):
         self.biggan_block_num=biggan_block_num
         self.bigGAN_layers=nn.ModuleList([])
         for i in range(biggan_block_num):
-            self.bigGAN_layers.append(BigGANBlock(10,10))
+            self.bigGAN_layers.append(BigGANBlock(channels,10))
 
         self.conv2 = nn.Conv3d(in_channels=10, out_channels=1, kernel_size=3, padding=1)
 
@@ -310,7 +312,7 @@ class ViT_vary_encoder_decoder_partial_structure(nn.Module):
 
         # Convert from tokens back to 3D shape
         x = self.from_patch_embedding(x)
-        x = rearrange(x, 'b (h w d) (ph pw pd c) -> b c (h ph) (w pw) (d pd)', h=x_shape[2] // self.patch_height, w=x_shape[3] // self.patch_width, d=x_shape[4] // self.patch_depth, ph = self.patch_height, pw = self.patch_width, pd = self.patch_depth, c=10)
+        x = rearrange(x, 'b (h w d) (ph pw pd c) -> b c (h ph) (w pw) (d pd)', h=x_shape[2] // self.patch_height, w=x_shape[3] // self.patch_width, d=x_shape[4] // self.patch_depth, ph = self.patch_height, pw = self.patch_width, pd = self.patch_depth, c=self.channels)
 
         # Post-transformer CNN
         for i in range(self.biggan_block_num):
